@@ -29,4 +29,7 @@ Working notes for coding agents. Keep short; update the status line when a step 
 - Don't `pip install` into the Anaconda base env (a failed install broke `huggingface_hub` once).
 
 ## Status
-Steps 1-2 done (reference in `results/accuracy.csv`; `artifacts/fp32-s128.onnx` matches source at cos 0.999999). Step 3 gate submitted: S24, qnn_dlc, see `results/jobs.csv`.
+- Steps 1-2 done. Reference in `results/accuracy.csv`. `artifacts/fp32-s128[-split].onnx` matches the source at cos 0.999999.
+- Step 3 blocked. On S24 with qnn_dlc, both the full and the split (`--embed-on-host`) fp32 graphs compile but fail on device with `QNN_COMMON_ERROR_MEM_ALLOC`. The runtime log (`job.download_job_logs`) shows HTP fp16 kernels rejecting rank-5 elementwise ops (Q reshape `[0,0,2,2,256]`, `Unsqueeze_5d` mask).
+- Next: 1) rewrite attention to rank <= 4 in `surgery.py`; 2) fp32 CPU baseline (`--compute_unit cpu`, tflite or onnx); 3) quantize ladder on the split graph via `scripts/quantize.py` (untested end to end); 4) `scripts/collect.py` is untested (profile keys assumed).
+- Reuse finished compile jobs with `hub_run --compile-job <id>`.
