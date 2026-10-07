@@ -32,6 +32,7 @@ class Encoder:
         self.tok.enable_truncation(seq_len)
         self.sess = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
         self.input_names = {i.name for i in self.sess.get_inputs()}
+        self.int_type = np.int32 if self.sess.get_inputs()[0].type == "tensor(int32)" else np.int64
         self.static = all(isinstance(d, int) for d in self.sess.get_inputs()[0].shape)
         self.batch_size = 1 if self.static else batch_size
 
@@ -45,8 +46,8 @@ class Encoder:
     def _batch(self, texts: list[str]) -> np.ndarray:
         enc = self.tok.encode_batch(texts)
         width = self.seq_len if self.static else max(len(e.ids) for e in enc)
-        ids = np.full((len(enc), width), PAD_ID, np.int64)
-        mask = np.zeros((len(enc), width), np.int64)
+        ids = np.full((len(enc), width), PAD_ID, self.int_type)
+        mask = np.zeros((len(enc), width), self.int_type)
         for row, e in enumerate(enc):
             ids[row, : len(e.ids)] = e.ids
             mask[row, : len(e.ids)] = 1
