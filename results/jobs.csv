@@ -1,0 +1,7 @@
+submitted,label,kind,job_id,device,options,url
+2026-10-07T12:54:27+00:00,fp32-s128-qnn,compile,jp3oemqxp,Samsung Galaxy S24 (Family),--target_runtime qnn_dlc,https://workbench.aihub.qualcomm.com/jobs/jp3oemqxp/
+2026-10-07T12:54:28+00:00,fp32-s128-qnn,inference,jgod3ve45,Samsung Galaxy S24 (Family),,https://workbench.aihub.qualcomm.com/jobs/jgod3ve45/
+2026-10-07T12:54:32+00:00,fp32-s128-qnn,inference,jpv2vwz7g,Samsung Galaxy S24 (Family),,https://workbench.aihub.qualcomm.com/jobs/jpv2vwz7g/
+2026-10-07T13:05:58+00:00,fp32-s128-split-npu,compile,jgj3elr8p,Samsung Galaxy S24 (Family),--target_runtime qnn_dlc,https://workbench.aihub.qualcomm.com/jobs/jgj3elr8p/
+2026-10-07T13:06:02+00:00,fp32-s128-split-npu,inference,jpe6kv70g,Samsung Galaxy S24 (Family),,https://workbench.aihub.qualcomm.com/jobs/jpe6kv70g/
+2026-10-07T13:10:04+00:00,fp32-s128-split-npu,inference,jgd6ovyep,Samsung Galaxy S24 (Family),,https://workbench.aihub.qualcomm.com/jobs/jgd6ovyep/
