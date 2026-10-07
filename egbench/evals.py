@@ -56,6 +56,28 @@ def load_scifact() -> tuple[dict, dict, dict]:
     return queries, corpus, qrels
 
 
+def calibration_texts(n: int) -> list[str]:
+    """Prefixed texts disjoint from the eval sets: STS-B train sentences,
+    SciFact train queries and SciFact docs outside the eval corpus, in equal parts."""
+    rng = np.random.default_rng(SEED)
+    sts = load_stsb("train").sentence1.drop_duplicates().tolist()
+    train_ids = {str(r["query-id"]) for r in _jsonl(_fetch("mteb/scifact", "qrels/train.jsonl"))}
+    queries = [q["text"] for q in _jsonl(_fetch("mteb/scifact", "queries.jsonl")) if str(q["_id"]) in train_ids]
+    _, eval_corpus, _ = load_scifact()
+    docs = [
+        DOC_TEMPLATE.format(title=d["title"] or "none", text=d["text"])
+        for d in _jsonl(_fetch("mteb/scifact", "corpus.jsonl"))
+        if str(d["_id"]) not in eval_corpus
+    ]
+    k = n // 3
+    pick = lambda xs, m: [xs[i] for i in rng.choice(len(xs), m, replace=False)]
+    return (
+        [STS_PREFIX + t for t in pick(sts, k)]
+        + [QUERY_PREFIX + t for t in pick(queries, k)]
+        + pick(docs, n - 2 * k)
+    )
+
+
 def ndcg_at_10(scores: np.ndarray, qids: list, dids: list, qrels: dict) -> float:
     """Mean NDCG@10 with linear gain (as pytrec_eval / BEIR)."""
     discount = 1 / np.log2(np.arange(2, 12))

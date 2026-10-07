@@ -28,14 +28,8 @@ args = parser.parse_args()
 
 local = Encoder(args.model)
 texts = [STS_PREFIX + t for t in load_stsb().sentence1[:4]]
-inputs = {"input_ids": [], "attention_mask": []}
-for t in texts:
-    e = local.tok.encode(t)
-    ids = np.zeros((1, local.seq_len), local.int_type)
-    mask = np.zeros_like(ids)
-    ids[0, : len(e.ids)], mask[0, : len(e.ids)] = e.ids, 1
-    inputs["input_ids"].append(ids)
-    inputs["attention_mask"].append(mask)
+ids, mask = local.tokenize(texts, local.seq_len)
+inputs = {"input_ids": list(ids[:, None]), "attention_mask": list(mask[:, None])}
 
 compiled = hub.compile(hub.upload(args.model, args.label), args.device, args.label, args.options)
 target = compiled.get_target_model()
@@ -46,7 +40,7 @@ prof = hub.profile(target, args.device, args.label, args.profile_options)
 run = hub.infer(target, args.device, args.label, inputs, args.profile_options)
 
 device_emb = np.concatenate(run.download_output_data()["sentence_embedding"])
-ref = local([t for t in texts])
+ref = local(texts)
 print("finite on device:", np.isfinite(device_emb).all())
 norm = device_emb / np.linalg.norm(device_emb, axis=1, keepdims=True)
 print("cosine vs CPU:", (norm * ref).sum(1).round(5))

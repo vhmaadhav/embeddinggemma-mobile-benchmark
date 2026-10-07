@@ -27,6 +27,8 @@ class Encoder:
     """
 
     def __init__(self, model: Path, seq_len: int = SEQ_LEN, batch_size: int = 16):
+        if model.is_dir():  # AI Hub layout: name.onnx/{model.onnx, model.data}
+            model = model / "model.onnx"
         self.seq_len = seq_len
         self.tok = Tokenizer.from_file(str(TOKENIZER))
         self.tok.enable_truncation(seq_len)
@@ -43,14 +45,19 @@ class Encoder:
                 feed[name] = np.zeros((0, 512), np.float32)
         return feed
 
-    def _batch(self, texts: list[str]) -> np.ndarray:
+    def tokenize(self, texts: list[str], width: int | None = None) -> tuple[np.ndarray, np.ndarray]:
+        """Right-padded ids and mask; width defaults to the longest text."""
         enc = self.tok.encode_batch(texts)
-        width = self.seq_len if self.static else max(len(e.ids) for e in enc)
+        width = width or max(len(e.ids) for e in enc)
         ids = np.full((len(enc), width), PAD_ID, self.int_type)
         mask = np.zeros((len(enc), width), self.int_type)
         for row, e in enumerate(enc):
             ids[row, : len(e.ids)] = e.ids
             mask[row, : len(e.ids)] = 1
+        return ids, mask
+
+    def _batch(self, texts: list[str]) -> np.ndarray:
+        ids, mask = self.tokenize(texts, self.seq_len if self.static else None)
         (emb,) = self.sess.run(["sentence_embedding"], self._feed(ids, mask))
         return emb
 

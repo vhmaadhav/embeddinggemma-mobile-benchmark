@@ -1,12 +1,13 @@
 """Thin wrappers over qai_hub that log every submitted job to results/jobs.csv."""
 
 import csv
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 import qai_hub as hub
 
-from .config import RESULTS
+from .config import ARTIFACTS, RESULTS
 
 JOB_LOG = RESULTS / "jobs.csv"
 FIELDS = ("submitted", "label", "kind", "job_id", "device", "options", "url")
@@ -31,15 +32,35 @@ def log(job, label: str, device: str = "", options: str = "") -> None:
 
 
 def upload(path: Path, label: str):
-    """Upload once and reuse the model id across compile jobs."""
+    """Upload once per file version; later calls reuse the cached model id."""
+    cache = ARTIFACTS / "uploads.json"
+    ids = json.loads(cache.read_text()) if cache.exists() else {}
+    key = f"{path.resolve()}@{path.stat().st_mtime_ns}"
+    if key in ids:
+        return hub.get_model(ids[key])
     model = hub.upload_model(str(path))
     print(f"uploaded {label}: {model.model_id}")
+    ids[key] = model.model_id
+    cache.write_text(json.dumps(ids, indent=1))
     return model
 
 
 def compile(model, device: str, label: str, options: str):
     job = hub.submit_compile_job(model, hub.Device(device), name=label, options=options)
     log(job, label, device, options)
+    return job
+
+
+def quantize(model, calibration: dict, label: str, weights: str, activations: str, options: str = ""):
+    job = hub.submit_quantize_job(
+        model,
+        calibration,
+        weights_dtype=hub.QuantizeDtype[weights.upper()],
+        activations_dtype=hub.QuantizeDtype[activations.upper()],
+        name=label,
+        options=options,
+    )
+    log(job, label, options=f"w={weights} a={activations} {options}".strip())
     return job
 
 
