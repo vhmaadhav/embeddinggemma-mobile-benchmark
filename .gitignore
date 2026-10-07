@@ -1,0 +1,10 @@
+# Weights, generated models and cached datasets are large and reproducible.
+models/
+artifacts/
+data/
+
+__pycache__/
+*.pyc
+.venv/
+.idea/
+.vscode/
