@@ -35,6 +35,11 @@ def log(job, label: str, device: str = "", options: str = "") -> None:
         })
 
 
+def dataset(feed: dict) -> dict:
+    """Batched graph inputs -> AI Hub dataset (one batch-1 array per sample)."""
+    return {name: [x[i : i + 1] for i in range(len(x))] for name, x in feed.items()}
+
+
 def upload(path: Path, label: str):
     """Upload once per file version; later calls reuse the cached model id."""
     cache = ARTIFACTS / "uploads.json"

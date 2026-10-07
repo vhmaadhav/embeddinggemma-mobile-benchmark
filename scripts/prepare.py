@@ -1,6 +1,6 @@
 """Step 2: build the static AI Hub-ready graph and check it against the source.
 
-    python -m scripts.prepare --seq-len 128
+    python -m scripts.prepare --seq-len 128 [--embed-on-host]
 """
 
 import argparse
@@ -14,9 +14,11 @@ from egbench.surgery import build, op_histogram
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--seq-len", type=int, default=128)
+parser.add_argument("--embed-on-host", action="store_true", help="split the token lookup off the graph")
 args = parser.parse_args()
 
-model = build(SOURCE_ONNX, ARTIFACTS / f"fp32-s{args.seq_len}.onnx", args.seq_len)
+name = f"fp32-s{args.seq_len}" + ("-split" if args.embed_on_host else "")
+model = build(SOURCE_ONNX, ARTIFACTS / f"{name}.onnx", args.seq_len, args.embed_on_host)
 print(model)
 print(dict(op_histogram(model).most_common()))
 

@@ -6,7 +6,9 @@ static shapes and standard ops, so this module:
 1. bypasses the multimodal merge (text-only),
 2. decomposes ORT-only ops (RotaryEmbedding, [Skip]SimplifiedLayerNormalization),
 3. softens the -3.4e38 attention-mask constant, which wrecks quantization ranges,
-4. fixes inputs to (1, seq_len) int32 and constant-folds what that unlocks.
+4. fixes inputs to (1, seq_len) int32 and constant-folds what that unlocks,
+5. optionally moves the 262k-row token-embedding lookup off the graph, so
+   only the transformer runs on the accelerator (the table alone is 537 MB).
 """
 
 from collections import Counter
@@ -21,6 +23,8 @@ MERGE_OUT = "/model/multimodal_merge/Gather/output_0"
 TEXT_EMBEDS = "/model/multimodal_merge/Reshape_text/output_0"
 MASK_CONST = "/model/constants/FLOAT/-3.4028234663852886e+38"
 MASK_VALUE = -100.0  # exp(-100) is 0 in fp32, yet keeps int ranges sane
+EMBED_TABLE = "model.embed_tokens.weight"
+EMBEDS_INPUT = "inputs_embeds"
 
 
 class _Builder:
@@ -129,10 +133,6 @@ def text_only(model: onnx.ModelProto) -> None:
             if name == MERGE_OUT:
                 n.input[i] = TEXT_EMBEDS
     _prune(g)
-    used = {i for n in g.node for i in n.input}
-    keep = [i for i in g.input if i.name in used]
-    del g.input[:]
-    g.input.extend(keep)
 
 
 def soften_mask(model: onnx.ModelProto) -> None:
@@ -155,6 +155,23 @@ def fix_shapes(model: onnx.ModelProto, seq_len: int) -> None:
     _prune(g)
 
 
+def detach_embeddings(model: onnx.ModelProto, seq_len: int) -> np.ndarray:
+    """Replace the token-embedding Gather with a float `inputs_embeds` input.
+
+    Returns the (vocab, hidden) table for the host-side lookup.
+    """
+    g = model.graph
+    (gather,) = [n for n in g.node if n.op_type == "Gather" and n.input[0] == EMBED_TABLE]
+    table = next(numpy_helper.to_array(t) for t in g.initializer if t.name == EMBED_TABLE)
+    for n in g.node:
+        for i, name in enumerate(n.input):
+            if name == gather.output[0]:
+                n.input[i] = EMBEDS_INPUT
+    g.input.insert(0, helper.make_tensor_value_info(EMBEDS_INPUT, TensorProto.FLOAT, [1, seq_len, table.shape[1]]))
+    _prune(g)
+    return table
+
+
 def _prune(graph: onnx.GraphProto) -> None:
     """Drop nodes and initializers that no graph output depends on."""
     producer = {o: n for n in graph.node for o in n.output}
@@ -171,6 +188,9 @@ def _prune(graph: onnx.GraphProto) -> None:
     inits = [t for t in graph.initializer if t.name in used]
     del graph.initializer[:]
     graph.initializer.extend(inits)
+    inputs = [i for i in graph.input if i.name in used]
+    del graph.input[:]
+    graph.input.extend(inputs)
 
 
 def fold(src: Path, dst: Path) -> None:
@@ -181,6 +201,13 @@ def fold(src: Path, dst: Path) -> None:
     opts.add_session_config_entry("session.optimized_model_external_initializers_file_name", "model.data")
     opts.add_session_config_entry("session.optimized_model_external_initializers_min_size_in_bytes", "1024")
     ort.InferenceSession(str(src), opts, providers=["CPUExecutionProvider"])
+    # Inputs read only by folded Shape nodes are dead now; drop them.
+    model = onnx.load(str(dst), load_external_data=False)
+    used = {i for n in model.graph.node for i in n.input}
+    inputs = [i for i in model.graph.input if i.name in used]
+    del model.graph.input[:]
+    model.graph.input.extend(inputs)
+    onnx.save(model, str(dst))
 
 
 def op_histogram(path: Path) -> Counter:
@@ -188,13 +215,21 @@ def op_histogram(path: Path) -> Counter:
     return Counter(f"{n.domain + '.' if n.domain else ''}{n.op_type}" for n in m.graph.node)
 
 
-def build(source: Path, out_dir: Path, seq_len: int) -> Path:
-    """Write `out_dir/model.onnx` (+ `model.data`); returns the model path."""
+def build(source: Path, out_dir: Path, seq_len: int, embed_on_host: bool = False) -> Path:
+    """Write `out_dir/model.onnx` (+ `model.data`); returns the model path.
+
+    With `embed_on_host`, the lookup table is saved next to `out_dir` as
+    `embed_tokens.npy` (outside it, so AI Hub uploads stay graph-only).
+    """
     model = onnx.load(str(source))
     text_only(model)
     decompose(model)
     soften_mask(model)
     fix_shapes(model, seq_len)
+    if embed_on_host:
+        table = out_dir.parent / "embed_tokens.npy"
+        table.parent.mkdir(parents=True, exist_ok=True)
+        np.save(table, detach_embeddings(model, seq_len))
     onnx.checker.check_model(model, full_check=False)
 
     out_dir.mkdir(parents=True, exist_ok=True)

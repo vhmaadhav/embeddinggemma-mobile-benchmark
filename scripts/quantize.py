@@ -18,16 +18,15 @@ parser.add_argument("--activations", default="int8", choices=["int8", "int16"])
 parser.add_argument("--seq-len", type=int, default=128)
 parser.add_argument("--samples", type=int, default=600)
 parser.add_argument("--options", default="", help="extra quantize options, e.g. LiteMP")
-parser.add_argument("--label", help="defaults to w8a16-s128 style")
+parser.add_argument("--source", default="fp32-s128-split", help="artifact to quantize")
+parser.add_argument("--label", help="defaults to w8a16-s128-split style")
 args = parser.parse_args()
 
 bits = lambda d: d.removeprefix("int")
-label = args.label or f"w{bits(args.weights)}a{bits(args.activations)}-s{args.seq_len}"
-source = ARTIFACTS / f"fp32-s{args.seq_len}.onnx"
+label = args.label or f"w{bits(args.weights)}a{bits(args.activations)}" + args.source.removeprefix("fp32")
+source = ARTIFACTS / f"{args.source}.onnx"
 
-enc = Encoder(source, args.seq_len)
-ids, mask = enc.tokenize(calibration_texts(args.samples), args.seq_len)
-calibration = {"input_ids": list(ids[:, None]), "attention_mask": list(mask[:, None])}
+calibration = hub.dataset(Encoder(source, args.seq_len).feed(calibration_texts(args.samples)))
 
 job = hub.quantize(hub.upload(source, "fp32"), calibration, label, args.weights, args.activations, args.options)
 model = job.get_target_model()

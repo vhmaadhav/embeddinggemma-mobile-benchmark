@@ -28,8 +28,7 @@ args = parser.parse_args()
 
 local = Encoder(args.model)
 texts = [STS_PREFIX + t for t in load_stsb().sentence1[:4]]
-ids, mask = local.tokenize(texts, local.seq_len)
-inputs = {"input_ids": list(ids[:, None]), "attention_mask": list(mask[:, None])}
+inputs = hub.dataset(local.feed(texts))
 
 compiled = hub.compile(hub.upload(args.model, args.label), args.device, args.label, args.options)
 target = compiled.get_target_model()

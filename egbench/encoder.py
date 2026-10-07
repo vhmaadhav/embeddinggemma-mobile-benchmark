@@ -23,27 +23,27 @@ class Encoder:
     """Tokenise, pad to `seq_len` and return L2-normalised 768-d embeddings.
 
     Static-shape graphs take exactly one row of `seq_len` tokens, so they
-    are run one text at a time; dynamic graphs are batched.
+    are run one text at a time; dynamic graphs are batched. Graphs built
+    with the embedding split take `inputs_embeds`, looked up here from
+    `embed_tokens.npy` beside the model directory.
     """
 
     def __init__(self, model: Path, seq_len: int = SEQ_LEN, batch_size: int = 16):
+        model_dir = model if model.is_dir() else model.parent
         if model.is_dir():  # AI Hub layout: name.onnx/{model.onnx, model.data}
             model = model / "model.onnx"
         self.seq_len = seq_len
         self.tok = Tokenizer.from_file(str(TOKENIZER))
         self.tok.enable_truncation(seq_len)
         self.sess = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
-        self.input_names = {i.name for i in self.sess.get_inputs()}
-        self.int_type = np.int32 if self.sess.get_inputs()[0].type == "tensor(int32)" else np.int64
-        self.static = all(isinstance(d, int) for d in self.sess.get_inputs()[0].shape)
+        inputs = {i.name: i for i in self.sess.get_inputs()}
+        self.int_type = np.int32 if inputs["attention_mask"].type == "tensor(int32)" else np.int64
+        self.static = all(isinstance(d, int) for d in inputs["attention_mask"].shape)
         self.batch_size = 1 if self.static else batch_size
-
-    def _feed(self, ids: np.ndarray, mask: np.ndarray) -> dict:
-        feed = {"input_ids": ids, "attention_mask": mask}
-        for name in _MULTIMODAL_INPUTS:
-            if name in self.input_names:
-                feed[name] = np.zeros((0, 512), np.float32)
-        return feed
+        self.media = [name for name in _MULTIMODAL_INPUTS if name in inputs]
+        self.table = None
+        if "inputs_embeds" in inputs:
+            self.table = np.load(model_dir.parent / "embed_tokens.npy", mmap_mode="r")
 
     def tokenize(self, texts: list[str], width: int | None = None) -> tuple[np.ndarray, np.ndarray]:
         """Right-padded ids and mask; width defaults to the longest text."""
@@ -56,10 +56,17 @@ class Encoder:
             mask[row, : len(e.ids)] = 1
         return ids, mask
 
-    def _batch(self, texts: list[str]) -> np.ndarray:
+    def feed(self, texts: list[str]) -> dict[str, np.ndarray]:
+        """Graph inputs for a batch, padded to `seq_len` for static graphs."""
         ids, mask = self.tokenize(texts, self.seq_len if self.static else None)
-        (emb,) = self.sess.run(["sentence_embedding"], self._feed(ids, mask))
-        return emb
+        feed = {"attention_mask": mask}
+        if self.table is None:
+            feed["input_ids"] = ids
+        else:
+            feed["inputs_embeds"] = np.asarray(self.table[ids], np.float32)
+        for name in self.media:
+            feed[name] = np.zeros((0, 512), np.float32)
+        return feed
 
     def __call__(self, texts: list[str], prefix: str = "") -> np.ndarray:
         texts = [prefix + t for t in texts]
@@ -68,7 +75,7 @@ class Encoder:
         out = np.empty((len(texts), HIDDEN), np.float32)
         for start in range(0, len(texts), self.batch_size):
             idx = order[start : start + self.batch_size]
-            out[idx] = self._batch([texts[i] for i in idx])
+            (out[idx],) = self.sess.run(["sentence_embedding"], self.feed([texts[i] for i in idx]))
         if not np.isfinite(out).all():
             raise FloatingPointError("NaN/Inf in embeddings (fp16 overflow?)")
         return out
