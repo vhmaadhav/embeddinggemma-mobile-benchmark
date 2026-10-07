@@ -1,0 +1,2 @@
+name,seq_len,sts_spearman_768,scifact_ndcg10_768,sts_spearman_256,scifact_ndcg10_256
+fp32-reference,128,0.8749,0.8683,0.8738,0.851
