@@ -15,6 +15,12 @@ Working notes for coding agents. Keep short; update the status line when a step 
 - Multimodal merge (`/model/multimodal_merge/*`): bypass for text-only.
 - Dynamic shapes: fix to batch 1, seq 128 (later 512), then constant-fold.
 
+## AI Hub (qai-hub 0.56)
+- Target runtimes: `qnn_dlc`, `precompiled_qnn_onnx`, `onnx`, `tflite` (`qnn_context_binary` is gone).
+- `submit_profile_job` is deprecated; `submit_inference_job(..., profile=True)` gives outputs and profile in one job.
+- Upload ONNX with external data as a directory `name.onnx/{model.onnx, model.data}`. Upload ids are cached in `artifacts/uploads.json`.
+- Set UTF-8 stdout on Windows; qai_hub's progress emoji crash cp1252.
+
 ## Rules
 - Never fp16 (NaN). Check outputs for NaN.
 - Re-normalise after MRL truncation. Always use task prefixes.
@@ -23,4 +29,4 @@ Working notes for coding agents. Keep short; update the status line when a step 
 - Don't `pip install` into the Anaconda base env (a failed install broke `huggingface_hub` once).
 
 ## Status
-Step 1 (CPU reference) in progress.
+Steps 1-2 done (reference in `results/accuracy.csv`; `artifacts/fp32-s128.onnx` matches source at cos 0.999999). Step 3 gate submitted: S24, qnn_dlc, see `results/jobs.csv`.
