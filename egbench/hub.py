@@ -2,12 +2,16 @@
 
 import csv
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import qai_hub as hub
 
 from .config import ARTIFACTS, RESULTS
+
+# qai_hub prints emoji progress; the default Windows console codec chokes on it.
+sys.stdout.reconfigure(encoding="utf-8")
 
 JOB_LOG = RESULTS / "jobs.csv"
 FIELDS = ("submitted", "label", "kind", "job_id", "device", "options", "url")
@@ -64,13 +68,8 @@ def quantize(model, calibration: dict, label: str, weights: str, activations: st
     return job
 
 
-def profile(target_model, device: str, label: str, options: str = ""):
-    job = hub.submit_profile_job(target_model, hub.Device(device), name=label, options=options)
-    log(job, label, device, options)
-    return job
-
-
 def infer(target_model, device: str, label: str, inputs: dict, options: str = ""):
-    job = hub.submit_inference_job(target_model, hub.Device(device), inputs, name=label, options=options)
+    """Inference jobs also profile (latency, memory, per-op compute unit)."""
+    job = hub.submit_inference_job(target_model, hub.Device(device), inputs, name=label, options=options, profile=True)
     log(job, label, device, options)
     return job
