@@ -37,6 +37,7 @@ class Encoder:
         self.tok.enable_truncation(seq_len)
         self.sess = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
         inputs = {i.name: i for i in self.sess.get_inputs()}
+        self.input_order = list(inputs)
         self.int_type = np.int32 if inputs["attention_mask"].type == "tensor(int32)" else np.int64
         self.static = all(isinstance(d, int) for d in inputs["attention_mask"].shape)
         self.batch_size = 1 if self.static else batch_size
@@ -57,7 +58,7 @@ class Encoder:
         return ids, mask
 
     def feed(self, texts: list[str]) -> dict[str, np.ndarray]:
-        """Graph inputs for a batch, padded to `seq_len` for static graphs."""
+        """Graph inputs in graph order (AI Hub matches them by position)."""
         ids, mask = self.tokenize(texts, self.seq_len if self.static else None)
         feed = {"attention_mask": mask}
         if self.table is None:
@@ -66,7 +67,7 @@ class Encoder:
             feed["inputs_embeds"] = np.asarray(self.table[ids], np.float32)
         for name in self.media:
             feed[name] = np.zeros((0, 512), np.float32)
-        return feed
+        return {name: feed[name] for name in self.input_order}
 
     def __call__(self, texts: list[str], prefix: str = "") -> np.ndarray:
         texts = [prefix + t for t in texts]

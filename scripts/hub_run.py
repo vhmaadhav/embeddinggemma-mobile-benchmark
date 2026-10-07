@@ -13,6 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
+import qai_hub
+
 from egbench import hub
 from egbench.config import STS_PREFIX
 from egbench.encoder import Encoder
@@ -24,13 +26,17 @@ parser.add_argument("--label", required=True)
 parser.add_argument("--device", default="Samsung Galaxy S24 (Family)")
 parser.add_argument("--options", default="--target_runtime qnn_dlc")
 parser.add_argument("--run-options", default="", help="e.g. --compute_unit cpu")
+parser.add_argument("--compile-job", help="reuse a finished compile job instead of compiling")
 args = parser.parse_args()
 
 local = Encoder(args.model)
 texts = [STS_PREFIX + t for t in load_stsb().sentence1[:4]]
 inputs = hub.dataset(local.feed(texts))
 
-compiled = hub.compile(hub.upload(args.model, args.label), args.device, args.label, args.options)
+if args.compile_job:
+    compiled = qai_hub.get_job(args.compile_job)
+else:
+    compiled = hub.compile(hub.upload(args.model, args.label), args.device, args.label, args.options)
 target = compiled.get_target_model()
 if target is None:
     raise SystemExit(f"compile failed: {compiled.get_status().message}\n{compiled.url}")
